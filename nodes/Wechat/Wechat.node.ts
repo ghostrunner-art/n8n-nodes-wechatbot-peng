@@ -48,6 +48,15 @@ export class Wechat implements INodeType {
 				description: '填入 {{ $json.senderId }} 以回复发送者，或填入指定的微信 ID',
 			},
 			{
+				displayName: 'Typing Session ID',
+				name: 'typingSessionId',
+				type: 'string',
+				default: '',
+				placeholder: '{{ $json.typingSessionId }}',
+				required: false,
+				description: '用于取消"输入中"状态的会话ID。从 Wechat Trigger 节点的 typingSessionId 获取',
+			},
+			{
 				displayName: 'Message Type',
 				name: 'messageType',
 				type: 'options',
@@ -205,9 +214,9 @@ export class Wechat implements INodeType {
 					);
 				}
 
-				// 检查是否需要取消"输入中"状态
-				const inputItem = items[itemIndex]?.json;
-				if (inputItem?.typingSessionId && inputItem?.isTypingActive && inputItem?.typingTargetId === targetId) {
+				// 如果填写了 Typing Session ID，则取消"输入中"状态
+				const typingSessionId = this.getNodeParameter('typingSessionId', itemIndex, '') as string;
+				if (typingSessionId) {
 					try {
 						await core.sendTyping(targetId, 'cancel');
 					} catch {

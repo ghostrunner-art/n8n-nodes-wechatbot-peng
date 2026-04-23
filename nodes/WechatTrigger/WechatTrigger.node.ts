@@ -137,9 +137,6 @@ export class WechatTrigger implements INodeType {
 		// 消息去重缓存
 		const seenMessageIds = new Set<number>();
 
-		// 跟踪正在输入中的会话
-		const typingSessions = new Set<string>();
-
 		// 消息处理器 —— 唯一允许调用 this.emit 的地方
 		const messageHandler = async (event: {
 			content: string;
@@ -150,28 +147,14 @@ export class WechatTrigger implements INodeType {
 		}) => {
 			const raw = event.raw;
 
-			// 为每条消息生成唯一的 typing 会话 ID
+			// 生成唯一的 typing session ID
 			const typingSessionId = randomUUID();
+
+			// 立即发送"输入中"状态（给发送者）
 			const senderId = event.from;
-			
-			// 立即发送"输入中"状态
 			if (senderId) {
 				try {
 					await core.sendTyping(senderId, 'typing');
-					typingSessions.add(typingSessionId);
-					
-					// 每5秒刷新一次"输入中"状态，保持显示
-					const typingInterval = setInterval(async () => {
-						if (typingSessions.has(typingSessionId)) {
-							try {
-								await core.sendTyping(senderId, 'typing');
-							} catch {
-								// 忽略刷新失败
-							}
-						} else {
-							clearInterval(typingInterval);
-						}
-					}, 5000);
 				} catch {
 					// 忽略发送失败
 				}
@@ -255,10 +238,8 @@ export class WechatTrigger implements INodeType {
 				messageId: raw.message_id,
 				seq: raw.seq,
 				sessionId: raw.session_id,
-				// 用于关联 typing 状态，Send 节点收到后会取消"输入中"
+				// 用于 Send 节点取消"输入中"状态的唯一标识
 				typingSessionId,
-				isTypingActive: true,
-				typingTargetId: senderId,
 			};
 
 			// 引用消息信息
@@ -323,8 +304,6 @@ export class WechatTrigger implements INodeType {
 
 		// 返回 closeFunction，在节点停用时释放资源
 		const closeFunction = async () => {
-			// 清理所有 typing 会话
-			typingSessions.clear();
 			core.off('message', messageHandler);
 			core.off('error', errorHandler);
 			core.stop();
