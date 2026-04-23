@@ -91,7 +91,19 @@ export class WechatTrigger implements INodeType {
 	};
 
 	async trigger(this: ITriggerFunctions): Promise<ITriggerResponse | undefined> {
-		const credentials = await this.getCredentials('wechatOfficialApi');
+		// 获取凭证，处理凭证不存在的情况
+		let credentials: Record<string, unknown>;
+		try {
+			credentials = await this.getCredentials('wechatOfficialApi');
+		} catch (error) {
+			throw new Error(
+				'Failed to load WechatOfficialApi credentials. ' +
+					'The credential may have been deleted. ' +
+					'Please create a new credential in Settings → Credentials, then refresh this page. ' +
+					'If the issue persists, try clearing browser cache or restarting n8n.',
+			);
+		}
+
 		const messageTypeFilter = this.getNodeParameter('messageTypeFilter', []) as string[];
 		const includeRaw = this.getNodeParameter('includeRaw', false) as boolean;
 		const deduplication = this.getNodeParameter('deduplication', true) as boolean;
