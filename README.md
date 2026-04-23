@@ -1,262 +1,280 @@
-![Banner image](https://user-images.githubusercontent.com/10284570/173569848-c624317f-42b1-45a6-ab09-f0ea3c247648.png)
+# n8n 微信节点插件
 
-# n8n-nodes-starter
+基于微信官方 iLink Bot API 的 n8n 节点插件，支持个人微信消息的收发、媒体文件处理和健康监控。
 
-This starter repository helps you build custom integrations for [n8n](https://n8n.io). It includes example nodes, credentials, the node linter, and all the tooling you need to get started.
+## 功能特性
 
-## Quick Start
+### 核心功能
+- **扫码登录** - 通过二维码安全登录微信，获取持久化会话
+- **消息监听** - 实时接收微信消息（文本、图片、语音、文件、视频）
+- **消息发送** - 支持发送文本、图片、文件消息
+- **健康检查** - 定期检查会话状态，及时预警过期
 
-> [!TIP]
-> **New to building n8n nodes?** The fastest way to get started is with `npm create @n8n/node`. This command scaffolds a complete node package for you using the [@n8n/node-cli](https://www.npmjs.com/package/@n8n/node-cli).
+### 高级特性
+- **输入状态指示** - 处理消息时自动显示"对方正在输入..."
+- **消息去重** - 基于 message_id 自动去重，防止重复处理
+- **媒体下载** - 自动下载图片、语音、文件等媒体到 n8n binary
+- **语音转文字** - 自动提取微信 ASR 转写结果
+- **引用消息** - 支持识别和提取引用/回复的消息内容
+- **断线重连** - 内置指数退避重试机制
 
-**To create a new node package from scratch:**
+## 节点说明
 
+### 1. Wechat Login（微信登录）
+独立登录节点，无需配置凭证。
+
+**操作：**
+- **Get QR Code** - 获取登录二维码
+  - 输出：`qrcodeUrl`（二维码图片链接）、`sessionKey`（会话密钥）
+- **Verify Scan Result** - 验证扫码结果
+  - 输入：`sessionKey`（从上一步获取）
+  - 输出：`sessionData`（完整的会话数据，用于配置凭证）
+
+### 2. Wechat Trigger（微信触发器）
+必须配置 `WechatOfficialApi` 凭证。
+
+**功能：**
+- 实时监听微信消息
+- 支持消息类型过滤（文本/图片/语音/文件/视频）
+- 自动下载媒体文件并挂载到 `binary.data`
+- 收到消息时自动显示"输入中"状态
+- 输出包含 `typingSessionId` 和 `isTypingActive` 字段
+
+**输出字段：**
+- `senderId` - 发送者微信 ID
+- `messageType` - 消息类型（text/image/voice/file/video）
+- `content` - 文本内容
+- `voiceText` - 语音转文字结果（语音消息）
+- `fileName` / `fileSize` - 文件信息（文件消息）
+- `quoted` - 引用消息信息
+- `binary.data` - 媒体文件二进制数据
+- `typingSessionId` - 输入状态会话 ID（用于 Send 节点取消）
+- `isTypingActive` - 是否正在输入中
+
+### 3. Wechat Send（微信发送）
+必须配置 `WechatOfficialApi` 凭证。
+
+**消息类型：**
+- **Text** - 发送文本消息
+- **Image** - 发送图片（从 binary 数据读取）
+- **File** - 发送文件（从 binary 数据读取）
+
+**特性：**
+- 发送成功后自动取消"输入中"状态
+- 支持通过 `{{ $json.senderId }}` 回复发送者
+- 动态 UI：选择不同消息类型显示不同输入框
+
+### 4. Wechat Health Check（健康检查）
+必须配置 `WechatOfficialApi` 凭证。
+
+**功能：**
+- 调用 `getConfig` API 验证会话有效性
+- 检测 session 是否过期（errcode -14）
+- 返回健康状态和错误信息
+
+**输出字段：**
+- `healthy` - 是否健康（true/false）
+- `errorCode` - 错误代码
+- `errorMessage` - 错误信息
+- `actionRequired` - 建议操作
+
+## 快速开始
+
+### 1. 在 n8n 中安装节点
+
+**方式一：通过 n8n 社区节点安装（推荐）**
+1. 进入 n8n 设置 → 社区节点
+2. 点击 "安装" 按钮
+3. 输入包名：`n8n-nodes-wechatbot-peng`
+4. 等待安装完成，n8n 会自动重启
+
+**方式二：通过 npm 安装**
 ```bash
-npm create @n8n/node
+# 进入 n8n 安装目录
+cd ~/.n8n
+
+# 安装节点包
+npm install n8n-nodes-wechatbot-peng
+
+# 重启 n8n 服务
 ```
 
-**Already using this starter? Start developing with:**
-
+**方式三：通过环境变量安装**
 ```bash
-npm run dev
+# 启动 n8n 时指定节点路径
+N8N_CUSTOM_EXTENSIONS=/path/to/n8n-nodes-wechatbot-peng n8n start
 ```
 
-This starts n8n with your nodes loaded and hot reload enabled.
+### 3. 配置微信登录
 
-## What's Included
+**第一步：获取二维码**
+1. 在工作流中添加 **Wechat Login** 节点
+2. 选择操作 **Get QR Code**
+3. 运行节点，获取 `qrcodeUrl` 和 `sessionKey`
+4. 在浏览器中打开 `qrcodeUrl`，使用微信扫码
 
-This starter repository includes two example nodes to learn from:
+**第二步：验证登录**
+1. 添加另一个 **Wechat Login** 节点
+2. 选择操作 **Verify Scan Result**
+3. 填入上一步获取的 `sessionKey`
+4. 运行节点，获取 `sessionData`
 
-- **[Example Node](nodes/Example/)** - A simple starter node that shows the basic structure with a custom `execute` method
-- **[GitHub Issues Node](nodes/GithubIssues/)** - A complete, production-ready example built using the **declarative style**:
-  - **Low-code approach** - Define operations declaratively without writing request logic
-  - Multiple resources (Issues, Comments)
-  - Multiple operations (Get, Get All, Create)
-  - Two authentication methods (OAuth2 and Personal Access Token)
-  - List search functionality for dynamic dropdowns
-  - Proper error handling and typing
-  - Ideal for HTTP API-based integrations
+**第三步：配置凭证**
+1. 进入 n8n 凭证管理
+2. 创建 **Wechat Official Api** 凭证
+3. 将 `sessionData` JSON 字符串粘贴到 `Session Data` 字段
 
-> [!TIP]
-> The declarative/low-code style (used in GitHub Issues) is the recommended approach for building nodes that interact with HTTP APIs. It significantly reduces boilerplate code and handles requests automatically.
+### 4. 创建消息监听工作流
 
-Browse these examples to understand both approaches, then modify them or create your own.
-
-## Finding Inspiration
-
-Looking for more examples? Check out these resources:
-
-- **[npm Community Nodes](https://www.npmjs.com/search?q=keywords:n8n-community-node-package)** - Browse thousands of community-built nodes on npm using the `n8n-community-node-package` tag
-- **[n8n Built-in Nodes](https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/nodes)** - Study the source code of n8n's official nodes for production-ready patterns and best practices
-- **[n8n Credentials](https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/credentials)** - See how authentication is implemented for various services
-
-These are excellent resources to understand how to structure your nodes, handle different API patterns, and implement advanced features.
-
-## Prerequisites
-
-Before you begin, install the following on your development machine:
-
-### Required
-
-- **[Node.js](https://nodejs.org/)** (v22 or higher) and npm
-  - Linux/Mac/WSL: Install via [nvm](https://github.com/nvm-sh/nvm)
-  - Windows: Follow [Microsoft's NodeJS guide](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-windows)
-- **[git](https://git-scm.com/downloads)**
-
-### Recommended
-
-- Follow n8n's [development environment setup guide](https://docs.n8n.io/integrations/creating-nodes/build/node-development-environment/)
-
-> [!NOTE]
-> The `@n8n/node-cli` is included as a dev dependency and will be installed automatically when you run `npm install`. The CLI includes n8n for local development, so you don't need to install n8n globally.
-
-## Getting Started with this Starter
-
-Follow these steps to create your own n8n community node package:
-
-### 1. Create Your Repository
-
-[Generate a new repository](https://github.com/n8n-io/n8n-nodes-starter/generate) from this template, then clone it:
-
-```bash
-git clone https://github.com/<your-organization>/<your-repo-name>.git
-cd <your-repo-name>
+```
+[Wechat Trigger]  ← 配置 WechatOfficialApi 凭证
+    ↓
+[处理逻辑]        ← AI 回复、数据处理等
+    ↓
+[Wechat Send]     ← 配置 WechatOfficialApi 凭证，Target ID 填 {{ $json.senderId }}
 ```
 
-### 2. Install Dependencies
+## 工作流示例
 
-```bash
-npm install
+### 示例 1：简单回声机器人
+
+```
+[Wechat Trigger] (messageTypeFilter: text)
+    ↓
+[Wechat Send]
+  - Target ID: {{ $json.senderId }}
+  - Message Type: Text
+  - Message Content: 你说了：{{ $json.content }}
 ```
 
-This installs all required dependencies including the `@n8n/node-cli`.
+### 示例 2：AI 智能回复
 
-### 3. Explore the Examples
-
-Browse the example nodes in [nodes/](nodes/) and [credentials/](credentials/) to understand the structure:
-
-- Start with [nodes/Example/](nodes/Example/) for a basic node
-- Study [nodes/GithubIssues/](nodes/GithubIssues/) for a real-world implementation
-
-### 4. Build Your Node
-
-Edit the example nodes to fit your use case, or create new node files by copying the structure from [nodes/Example/](nodes/Example/).
-
-> [!TIP]
-> If you want to scaffold a completely new node package, use `npm create @n8n/node` to start fresh with the CLI's interactive generator.
-
-### 5. Configure Your Package
-
-Update `package.json` with your details:
-
-- `name` - Your package name (must start with `n8n-nodes-`)
-- `author` - Your name and email
-- `repository` - Your repository URL
-- `description` - What your node does
-
-Make sure your node is registered in the `n8n.nodes` array.
-
-### 6. Develop and Test Locally
-
-Start n8n with your node loaded:
-
-```bash
-npm run dev
+```
+[Wechat Trigger] (messageTypeFilter: text)
+    ↓
+[OpenAI Chat Model]
+  - System Prompt: 你是一个友好的助手
+  - User Message: {{ $json.content }}
+    ↓
+[Wechat Send]
+  - Target ID: {{ $json.senderId }}
+  - Message Type: Text
+  - Message Content: {{ $json.message }}
 ```
 
-This command runs `n8n-node dev` which:
+### 示例 3：健康检查监控
 
-- Builds your node with watch mode
-- Starts n8n with your node available
-- Automatically rebuilds when you make changes
-- Opens n8n in your browser (usually http://localhost:5678)
-
-You can now test your node in n8n workflows!
-
-> [!NOTE]
-> Learn more about CLI commands in the [@n8n/node-cli documentation](https://www.npmjs.com/package/@n8n/node-cli).
-
-### 7. Lint Your Code
-
-Check for errors:
-
-```bash
-npm run lint
+```
+[Schedule Trigger] (每 6 小时运行)
+    ↓
+[Wechat Health Check]
+    ↓
+[IF Node] (条件: {{ $json.healthy }} === false)
+    ↓ 是
+[Send Email] 或 [Send Slack Message]
+  - 主题：微信 Bot Session 过期提醒
+  - 内容：Session 已过期，请重新扫码登录
 ```
 
-Auto-fix issues when possible:
+## 技术细节
 
-```bash
-npm run lint:fix
+### Session 生命周期
+- `bot_token`（会话令牌）有效期为数天到数周
+- `context_token`（消息路由令牌）有效期为 24 小时
+- 超过 24 小时未互动，无法主动推送消息
+- 用户随时发消息可重置 24 小时窗口
+
+### 输入状态机制
+1. **触发器收到消息** → 立即发送 `typing` 状态
+2. **每 5 秒刷新** → 保持"输入中"显示
+3. **Send 节点发送完成** → 自动发送 `cancel` 取消状态
+4. **使用 UUID** → 每条消息有独立的 typing 会话，防止冲突
+
+### 消息去重
+- 基于 `message_id` 去重
+- 内存缓存最近 1000 条消息
+- 防止网络重试导致的重复处理
+
+### 错误处理
+- **errcode -14** - Session 过期，需要重新登录
+- **连续失败** - 指数退避重试（1秒 → 2秒 → 4秒...）
+- **网络错误** - 自动重连，最多 5 次尝试
+
+## 限制说明
+
+| 限制项 | 说明 |
+|--------|------|
+| 主动推送窗口 | 用户最后一条消息 24 小时内 |
+| 文件大小 | 最大 100MB |
+| 消息去重窗口 | 最近 1000 条 |
+| 输入状态刷新 | 每 5 秒 |
+| 长轮询超时 | 35 秒 |
+
+## 常见问题
+
+### Q: 为什么超过 24 小时不能主动发消息？
+A: 这是微信 iLink 协议的限制。需要用户先发消息，才能重置 24 小时窗口。
+
+### Q: Session 过期了怎么办？
+A: 使用 **Wechat Login** 节点重新扫码获取新的 `sessionData`，更新凭证即可。
+
+### Q: 如何监控 Session 状态？
+A: 使用 **Wechat Health Check** 节点定期检查，配合 **Schedule Trigger** 和邮件通知。
+
+### Q: 可以同时处理多个用户的消息吗？
+A: 可以。每个消息有独立的 UUID 标识，并发处理不会互相干扰。
+
+### Q: 媒体文件保存在哪里？
+A: 下载的媒体文件挂载到 n8n 的 `binary.data`，可在后续节点中通过 `binary` 访问。
+
+## 开发
+
+### 项目结构
+
+```
+nodes/
+├── WechatCore.ts                    # 核心通信协议
+├── WechatLogin/
+│   ├── WechatLogin.node.ts          # 登录节点
+│   └── wechat.svg
+├── WechatTrigger/
+│   ├── WechatTrigger.node.ts        # 触发器节点
+│   └── wechat.svg
+├── Wechat/
+│   ├── Wechat.node.ts               # 发送节点
+│   └── wechat.svg
+└── WechatHealthCheck/
+    ├── WechatHealthCheck.node.ts    # 健康检查节点
+    └── wechat.svg
+
+credentials/
+└── WechatOfficialApi.credentials.ts  # 凭证定义
 ```
 
-### 8. Build for Production
+### 可用脚本
 
-When ready to publish:
+| 脚本 | 说明 |
+|------|------|
+| `npm run dev` | 启动开发服务器 |
+| `npm run build` | 构建生产版本 |
+| `npm run build:watch` | 监视模式构建 |
+| `npm run lint` | 代码检查 |
+| `npm run lint:fix` | 自动修复代码风格 |
+| `npm run release` | 发布新版本 |
 
-```bash
-npm run build
-```
+## 依赖
 
-This compiles your TypeScript code to the `dist/` folder.
+- `n8n-workflow` - n8n 工作流 SDK
+- `@tencent-weixin/openclaw-weixin` - 微信官方 iLink API（类型参考）
+- `sharp` - 图片处理（缩略图生成）
 
-### 9. Prepare for Publishing
+## 许可证
 
-Before publishing:
+MIT
 
-1. **Update documentation**: Replace this README with your node's documentation. Use [README_TEMPLATE.md](README_TEMPLATE.md) as a starting point.
-2. **Update the LICENSE**: Add your details to the [LICENSE](LICENSE.md) file.
-3. **Test thoroughly**: Ensure your node works in different scenarios.
+## 相关资源
 
-### 10. Publish to npm
-
-Publishing is handled automatically by the included GitHub Actions workflow ([.github/workflows/publish.yml](.github/workflows/publish.yml)). It runs on every version tag push and publishes to npm with a provenance attestation — a requirement for n8n community nodes starting May 1, 2026.
-
-#### One-time setup
-
-Configure npm to trust this repository's GitHub Actions workflow so it can publish on your behalf. Log in to [npmjs.com](https://npmjs.com), open your package settings, and under **Publish access → Trusted Publishers** add a publisher with:
-
-- **Repository owner**: your GitHub username or org
-- **Repository name**: your repo name
-- **Workflow name**: `publish.yml`
-
-No token or secret needs to be stored in GitHub — the workflow uses GitHub's OIDC token instead.
-
-> [!NOTE]
-> If you prefer a traditional npm token, create a Granular Access Token on npmjs.com and store it as `NPM_TOKEN` in your repository's Actions secrets. See the comments at the top of `.github/workflows/publish.yml` for details.
-
-#### Releasing a new version
-
-```bash
-npm run release
-```
-
-This lints, builds, prompts for a version bump, updates the changelog, commits, tags, and pushes — which triggers the workflow to publish to npm.
-
-### 11. Submit for Verification (Optional)
-
-Get your node verified for n8n Cloud:
-
-1. Ensure your node meets the [requirements](https://docs.n8n.io/integrations/creating-nodes/deploy/submit-community-nodes/):
-   - Uses MIT license ✅ (included in this starter)
-   - No external package dependencies
-   - Follows n8n's design guidelines
-   - Passes quality and security review
-
-2. Submit through the [n8n Creator Portal](https://creators.n8n.io/nodes)
-
-**Benefits of verification:**
-
-- Available directly in n8n Cloud
-- Discoverable in the n8n nodes panel
-- Verified badge for quality assurance
-- Increased visibility in the n8n community
-
-## Available Scripts
-
-This starter includes several npm scripts to streamline development:
-
-| Script                | Description                                                                 |
-| --------------------- | --------------------------------------------------------------------------- |
-| `npm run dev`         | Start n8n with your node and watch for changes (runs `n8n-node dev`)        |
-| `npm run build`       | Compile TypeScript to JavaScript for production (runs `n8n-node build`)     |
-| `npm run build:watch` | Build in watch mode (auto-rebuild on changes)                               |
-| `npm run lint`        | Check your code for errors and style issues (runs `n8n-node lint`)          |
-| `npm run lint:fix`    | Automatically fix linting issues when possible (runs `n8n-node lint --fix`) |
-| `npm run release`     | Create a new release (runs `n8n-node release`)                              |
-
-> [!TIP]
-> These scripts use the [@n8n/node-cli](https://www.npmjs.com/package/@n8n/node-cli) under the hood. You can also run CLI commands directly, e.g., `npx n8n-node dev`.
-
-## Troubleshooting
-
-### My node doesn't appear in n8n
-
-1. Make sure you ran `npm install` to install dependencies
-2. Check that your node is listed in `package.json` under `n8n.nodes`
-3. Restart the dev server with `npm run dev`
-4. Check the console for any error messages
-
-### Linting errors
-
-Run `npm run lint:fix` to automatically fix most common issues. For remaining errors, check the [n8n node development guidelines](https://docs.n8n.io/integrations/creating-nodes/).
-
-### TypeScript errors
-
-Make sure you're using Node.js v22 or higher and have run `npm install` to get all type definitions.
-
-## Resources
-
-- **[n8n Node Documentation](https://docs.n8n.io/integrations/creating-nodes/)** - Complete guide to building nodes
-- **[n8n Community Forum](https://community.n8n.io/)** - Get help and share your nodes
-- **[@n8n/node-cli Documentation](https://www.npmjs.com/package/@n8n/node-cli)** - CLI tool reference
-- **[n8n Creator Portal](https://creators.n8n.io/nodes)** - Submit your node for verification
-- **[Submit Community Nodes Guide](https://docs.n8n.io/integrations/creating-nodes/deploy/submit-community-nodes/)** - Verification requirements and process
-
-## Contributing
-
-Have suggestions for improving this starter? [Open an issue](https://github.com/n8n-io/n8n-nodes-starter/issues) or submit a pull request!
-
-## License
-
-[MIT](https://github.com/n8n-io/n8n-nodes-starter/blob/master/LICENSE.md)
+- [n8n 官方文档](https://docs.n8n.io/)
+- [n8n 社区节点开发指南](https://docs.n8n.io/integrations/creating-nodes/)
+- [微信 iLink Bot API 协议文档](https://www.wechatbot.dev/en/protocol)
+- [n8n 社区论坛](https://community.n8n.io/)
